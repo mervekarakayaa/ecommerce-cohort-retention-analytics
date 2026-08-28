@@ -1,0 +1,40 @@
+WITH clean_data AS (
+    SELECT 
+        Invoice,
+        Quantity,
+        Price AS UnitPrice,
+        "Customer ID" AS CustomerID,
+        InvoiceDate
+    FROM raw_retail_data
+    WHERE Invoice NOT LIKE 'C%' 
+      AND Quantity > 0 
+      AND Price > 0
+      AND "Customer ID" IS NOT NULL
+      AND Quantity <= 500
+),
+customer_first_purchase AS (
+    SELECT 
+        CustomerID,
+        MIN(SUBSTR(InvoiceDate, 1, 7)) AS cohort_month
+    FROM clean_data
+    GROUP BY CustomerID
+),
+indexed_transactions AS (
+    SELECT 
+        r.CustomerID,
+        c.cohort_month,
+        SUBSTR(r.InvoiceDate, 1, 7) AS transaction_month,
+        (CAST(SUBSTR(r.InvoiceDate, 1, 4) AS INT) - CAST(SUBSTR(c.cohort_month, 1, 4) AS INT)) * 12 +
+        (CAST(SUBSTR(r.InvoiceDate, 6, 2) AS INT) - CAST(SUBSTR(c.cohort_month, 6, 2) AS INT)) AS cohort_index,
+        (r.Quantity * r.UnitPrice) AS revenue
+    FROM clean_data r
+    JOIN customer_first_purchase c ON r.CustomerID = c.CustomerID
+)
+SELECT 
+    cohort_month,
+    cohort_index,
+    COUNT(DISTINCT CustomerID) AS active_customers,
+    ROUND(SUM(revenue), 2) AS total_revenue
+FROM indexed_transactions
+GROUP BY cohort_month, cohort_index
+ORDER BY cohort_month, cohort_index;
